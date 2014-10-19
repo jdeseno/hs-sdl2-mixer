@@ -82,10 +82,10 @@ import Graphics.UI.SDL.Error (getError)
 import Graphics.UI.SDL.Mixer.Types
 
 -- Error handling until something better is decided on in the main lib.
-handleErrorI :: (Num a, Ord a) => String -> a -> (a -> IO b) -> IO b
-handleErrorI fname i fn
-  | i < 0     = fn i
-  | otherwise = (\err -> error $ fname ++ ": " ++ show err) =<< getError
+handleErrorI :: (Num a, Ord a) => String -> a -> (a -> Bool) -> (a -> IO b) -> IO b
+handleErrorI fname i errCond fn
+  | errCond i = (\err -> error $ fname ++ ": " ++ show err) =<< getError
+  | otherwise = fn i
 {-# INLINE handleErrorI #-}
 
 -- | (Major, Minor, Patchlevel)
@@ -131,15 +131,15 @@ openAudio freq format channels chunksize = do
       channels'  = fromIntegral channels
       chunksize' = fromIntegral chunksize
   ret <- mixOpenAudio' freq' format' channels' chunksize'
-  handleErrorI "openAudio" ret (const $ return ())
+  handleErrorI "openAudio" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_AllocateChannels"
   mixAllocateChannels' :: #{type int} -> IO #{type int}
 
 allocateChannels :: Int -> IO ()
 allocateChannels numchans = do
-  ret <- mixAllocateChannels' (fromIntegral numchans)
-  handleErrorI "allocateChannels" ret (const $ return ())
+  _ <- mixAllocateChannels' (fromIntegral numchans)
+  return ()
 
 foreign import ccall unsafe "Mix_QuerySpec"
   mixQuerySpec' :: Ptr #{type int} -> Ptr #{type Uint16} -> Ptr #{type int} -> IO #{type int}
@@ -150,7 +150,7 @@ querySpec =
   alloca $ \format' ->
   alloca $ \channels' -> do
     ret <- mixQuerySpec' freq' format' channels'
-    handleErrorI "querySpec" ret $ \_ -> do
+    handleErrorI "querySpec" ret (==0) $ \_ -> do
       freq     <- fmap fromIntegral $ peek freq'
       format   <- fmap toAudioFormat $ peek format'
       channels <- fmap fromIntegral $ peek channels'
@@ -283,7 +283,7 @@ setPanning channel left right = do
       left'    = fromIntegral left
       right'   = fromIntegral right
   ret <- mixSetPanning' channel' left' right'
-  handleErrorI "setPanning" ret $ (const $ return ())
+  handleErrorI "setPanning" ret (==0) $ (const $ return ())
 
 foreign import ccall unsafe "Mix_SetPosition"
   mixSetPosition' :: #{type int} -> #{type Sint16} -> #{type Uint8} -> IO #{type int}
@@ -294,7 +294,7 @@ setPosition channel angle distance = do
       angle'    = fromIntegral angle
       distance' = fromIntegral distance
   ret <- mixSetPosition' channel' angle' distance'
-  handleErrorI "setPosition" ret $ (const $ return ())
+  handleErrorI "setPosition" ret (==0) $ (const $ return ())
 
 foreign import ccall unsafe "Mix_SetDistance"
   mixSetDistance' :: #{type int} -> #{type Uint8} -> IO #{type int}
@@ -304,7 +304,7 @@ setDistance channel distance = do
   let channel'  = fromIntegral channel
       distance' = fromIntegral distance
   ret <- mixSetDistance' channel' distance'
-  handleErrorI "setDistance" ret $ (const $ return ())
+  handleErrorI "setDistance" ret (==0) $ (const $ return ())
 
 foreign import ccall unsafe "Mix_SetReverseStereo"
   mixSetReverseStereo' :: #{type int} -> #{type int} -> IO #{type int}
@@ -313,15 +313,15 @@ setReverseStereo :: Channel -> Bool -> IO ()
 setReverseStereo channel doflip = do
   let channel' = fromIntegral channel
   ret <- mixSetReverseStereo' channel' (fromBool doflip)
-  handleErrorI "setReverseStereo" ret $ (const $ return ())
+  handleErrorI "setReverseStereo" ret (==0) $ (const $ return ())
 
 foreign import ccall unsafe "Mix_ReserveChannels"
   mixReserveChannels' :: #{type int} -> IO #{type int}
 
 reserveChannels :: Int -> IO ()
 reserveChannels num = do
-  ret <- mixReserveChannels' (fromIntegral num)
-  handleErrorI "reserveChannels" ret $ (const $ return ())
+  _ <- mixReserveChannels' (fromIntegral num)
+  return ()
 
 foreign import ccall unsafe "Mix_GroupChannel"
   mixGroupChannel' :: #{type int} -> #{type int} -> IO #{type int}
@@ -383,7 +383,7 @@ playMusic :: Music -> Int -> IO ()
 playMusic music loops =
   withForeignPtr music $ \music' -> do
     ret <- mixPlayMusic' music' (fromIntegral loops)
-    handleErrorI "playMusic" ret (const $ return ())
+    handleErrorI "playMusic" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_FadeInMusic"
   mixFadeInMusic' :: Ptr MusicStruct -> #{type int} -> #{type int} -> IO #{type int}
@@ -392,7 +392,7 @@ fadeInMusic :: Music -> Int -> Int -> IO ()
 fadeInMusic music loops ms =
   withForeignPtr music $ \music' -> do
     ret <- mixFadeInMusic' music' (fromIntegral loops) (fromIntegral ms)
-    handleErrorI "fadeInMusic" ret (const $ return ())
+    handleErrorI "fadeInMusic" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_FadeInMusicPos"
   mixFadeInMusicPos' :: Ptr MusicStruct -> #{type int} -> #{type int} -> #{type double} -> IO #{type int}
@@ -401,7 +401,7 @@ fadeInMusicPos :: Music -> Int -> Int -> Double -> IO ()
 fadeInMusicPos music loops ms pos =
   withForeignPtr music $ \music' -> do
     ret <- mixFadeInMusicPos' music' (fromIntegral loops) (fromIntegral ms) pos
-    handleErrorI "fadeInMusicPos" ret (const $ return ())
+    handleErrorI "fadeInMusicPos" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_FadeInChannelTimed"
   mixFadeInChannelTimed' :: #{type int} -> Ptr ChunkStruct -> #{type int} -> #{type int} -> #{type int} -> IO #{type int}
@@ -414,7 +414,7 @@ fadeInChannelTimed channel chunk loops ms ticks =
         ms'      = fromIntegral ms
         ticks'   = fromIntegral ticks
     ret <- mixFadeInChannelTimed' channel' chunk' loops' ms' ticks'
-    handleErrorI "fadeInChannelTimed" ret (const $ return ())
+    handleErrorI "fadeInChannelTimed" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_Volume"
   mixVolume' :: #{type int} -> #{type int} -> IO #{type int}
@@ -550,16 +550,16 @@ foreign import ccall unsafe "Mix_SetMusicPosition"
 setMusicPosition :: Double -> IO ()
 setMusicPosition pos = do
   ret <- mixSetMusicPosition' pos
-  handleErrorI "setMusicPosition" ret (const $ return ())
+  handleErrorI "setMusicPosition" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_Playing"
-  mixPlaying' :: #{type int} -> IO #{type int} 
+  mixPlaying' :: #{type int} -> IO #{type int}
 
 playing :: Channel -> IO Bool
 playing channel = toBool <$> mixPlaying' (fromIntegral channel)
 
 foreign import ccall unsafe "Mix_PlayingMusic"
-  mixPlayingMusic' :: IO #{type int} 
+  mixPlayingMusic' :: IO #{type int}
 
 playingMusic :: IO Bool
 playingMusic = toBool <$> mixPlayingMusic'
@@ -571,7 +571,7 @@ setMusicCMD :: String -> IO ()
 setMusicCMD cmd =
   withCString cmd $ \cmd' -> do
     ret <- mixSetMusicCMD' cmd'
-    handleErrorI "setMusicCMD" ret (const $ return ())
+    handleErrorI "setMusicCMD" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_SetSynchroValue"
   mixSetSynchroValue' :: #{type int} -> IO #{type int}
@@ -579,7 +579,7 @@ foreign import ccall unsafe "Mix_SetSynchroValue"
 setSynchroValue :: Int -> IO ()
 setSynchroValue value = do
   ret <- mixSetSynchroValue' (fromIntegral value)
-  handleErrorI "setSynchroValue" ret (const $ return ())
+  handleErrorI "setSynchroValue" ret (== -1) (const $ return ())
 
 foreign import ccall unsafe "Mix_GetSynchroValue"
   mixGetSynchroValue' :: IO #{type int}
@@ -594,7 +594,7 @@ setSoundFonts :: String -> IO ()
 setSoundFonts paths =
   withCString paths $ \paths' -> do
     ret <- mixSetSoundFonts' paths'
-    handleErrorI "setSoundFonts" ret (const $ return ())
+    handleErrorI "setSoundFonts" ret (== 0) (const $ return ())
 
 foreign import ccall unsafe "Mix_GetSoundFonts"
   mixGetSoundFonts' :: IO CString
